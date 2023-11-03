@@ -13,6 +13,7 @@ const scanDynamo = async (params, list) => {
 
     if (dynamoData.LastEvaluatedKey && list.length < params.Limit) {
       params.ExclusiveStartKey = dynamoData.LastEvaluatedKey;
+      params.Limit = params.Limit - list.length;
       return await scanDynamo(params, list);
     }
     return { ...dynamoData, list };
