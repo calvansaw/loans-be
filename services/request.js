@@ -1,7 +1,7 @@
 const { dynamodb } = require("../libs/dynamoClient");
-// const { cognitoidentityserviceprovider } = require("../libs/cognitoClient");
 const utils = require("../helpers/utils");
 const account = require("../services/account");
+const loan = require("../services/loan");
 
 const REQUESTS_TABLE = "requests";
 const CREATE_ACCOUNT = "createAccount";
@@ -71,11 +71,11 @@ const getAllRequests = async (event) => {
   }
 
   const isAdmin = account.checkAdmin(userInfo.UserAttributes);
-  const { exclusiveStartKey, limit } = event.queryStringParameters;
+  const { exclusiveStartKey, limit } = event.queryStringParameters || {};
 
   const params = {
     TableName: REQUESTS_TABLE,
-    Limit: parseInt(limit, 10),
+    ...(limit && { Limit: parseInt(limit, 10) }),
     ...(exclusiveStartKey && {
       ExclusiveStartKey: { requestId: exclusiveStartKey },
     }),
@@ -107,14 +107,30 @@ const approveRequest = async (eventBody, userSub) => {
       payments: [],
     };
     return await account.createAccount(item);
+  } else if (eventBody.requestType === CREATE_LOAN) {
+    const item = {
+      ...eventBody.requestData,
+      loanId: `${new Date().valueOf()}-${eventBody.requestData.loanType}`,
+      redeemed: false,
+      loanApproval: APPROVED,
+    };
+    return await loan.createLoan(item, userSub);
   }
+
   const error = { error: "Invalid request type" };
   return new Promise.reject(error);
 };
 
-const rejectRequest = async (eventBody) => {
+const rejectRequest = async (eventBody, userSub) => {
   if (eventBody.requestType === CREATE_LOAN) {
-    // still create loan
+    // still create a loan object for record purpose
+    const item = {
+      ...eventBody.requestData,
+      loanId: `${new Date().valueOf()}-${eventBody.requestData.loanType}`,
+      redeemed: false,
+      loanApproval: REJECTED,
+    };
+    return await loan.createLoan(item, userSub);
   }
 };
 

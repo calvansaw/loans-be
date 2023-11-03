@@ -1,6 +1,5 @@
 const { dynamodb } = require("../libs/dynamoClient");
 const { cognitoidentityserviceprovider } = require("../libs/cognitoClient");
-// const utils = require("../helpers/utils");
 
 const LOANS_TABLE = "loans";
 
