@@ -5,11 +5,11 @@ const LOANS_URL = "/loans";
 
 const handler = async (event) => {
   console.log("event: ", event);
-  console.log("event: ", event.requestContext.authorizer.claims);
+  console.log("requestContext.authorizer: ", event.requestContext.authorizer);
   let response;
   switch (true) {
     case event.httpMethod === "POST" && event.path === LOANS_URL:
-      response = await account.createAccount(JSON.parse(event.body));
+      response = await account.createAccount(event);
       break;
 
     default:

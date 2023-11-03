@@ -1,12 +1,40 @@
 const { dynamodb } = require("../libs/dynamoClient");
+const { cognitoidentityserviceprovider } = require("../libs/cognitoClient");
 const utils = require("../helpers/utils");
 
 const LOANS_TABLE = "loans";
 
-const createAccount = async (data) => {
+const getUser = async (accessToken) => {
+  const params = { AccessToken: accessToken };
+  return await cognitoidentityserviceprovider.getUser(params).promise();
+};
+
+const checkAdmin = (userAttributes) => {
+  return userAttributes.some(
+    (att) => att.Name === "custom:role" && att.Value === "admin"
+  );
+};
+
+const createAccount = async (event) => {
+  const { headers, body } = event;
+
+  const accessToken = headers.Authorization.split("Bearer ")[1];
+  let userInfo;
+  try {
+    userInfo = await getUser(accessToken);
+    console.log("userInfo: ", userInfo);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+
+  if (!checkAdmin(userInfo.UserAttributes)) {
+    const error = { error: "Unauthorized, user is not an admin" };
+    return utils.buildResponse(403, error);
+  }
+
   const params = {
     TableName: LOANS_TABLE,
-    Item: data,
+    Item: JSON.parse(body),
     ConditionExpression: "attribute_not_exists(#sub)",
     ExpressionAttributeNames: {
       "#sub": "sub",
@@ -25,7 +53,6 @@ const createAccount = async (data) => {
         return utils.buildResponse(200, body);
       },
       (err) => {
-        console.log(err);
         return utils.buildResponse(400, err);
       }
     );
