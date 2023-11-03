@@ -14,6 +14,9 @@ const handler = async (event) => {
     case event.httpMethod === "GET" && event.path === LOANS_URL:
       response = await loan.getAllLoans(event);
       break;
+    case event.httpMethod === "PUT" && event.path === LOANS_URL:
+      response = await loan.updateLoan(event);
+      break;
     case event.httpMethod === "POST" && event.path === REQUESTS_URL:
       response = await request.createRequest(JSON.parse(event.body));
       break;

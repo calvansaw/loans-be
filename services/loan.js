@@ -59,4 +59,55 @@ const getAllLoans = async (event) => {
   }
 };
 
-module.exports = { createLoan, getAllLoans };
+const updateLoan = async (event) => {
+  const { headers, body } = event;
+  const accessToken = headers.Authorization.split("Bearer ")[1];
+  let userInfo;
+  try {
+    userInfo = await account.getUser(accessToken);
+    console.log("userInfo: ", userInfo);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+
+  const eventBody = JSON.parse(body);
+  const userSub = account.getUserSub(userInfo.UserAttributes);
+  const payment = {
+    paymentId: `${new Date().valueOf()}`,
+    loanId: eventBody.loan.loanId,
+    loanTitle: eventBody.loan.loanTitle,
+    loanType: eventBody.loan.loanType,
+    paymentDate: new Date().toISOString(),
+    amount: eventBody.paymentAmount,
+    currency: eventBody.loan.currency,
+  };
+
+  const params = {
+    TableName: LOANS_TABLE,
+    Key: { sub: userSub },
+    UpdateExpression: `SET #loans[${eventBody.index}] = :loan, #payments = list_append(#payments, :payment)`,
+    ExpressionAttributeNames: {
+      "#loans": "loans",
+      "#payments": "payments",
+    },
+    ExpressionAttributeValues: {
+      ":loan": eventBody.loan,
+      ":payment": [payment],
+    },
+    ReturnValues: "UPDATED_NEW",
+  };
+
+  try {
+    const response = await dynamodb.update(params).promise();
+    const body = {
+      Operation: "SAVE",
+      Message: "SUCCESS",
+      Item: response,
+    };
+    return utils.buildResponse(200, body);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+};
+
+module.exports = { createLoan, getAllLoans, updateLoan };
