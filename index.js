@@ -10,14 +10,17 @@ const handler = async (event) => {
   console.log("requestContext.authorizer: ", event.requestContext.authorizer);
   let response;
   switch (true) {
-    case event.httpMethod === "POST" && event.path === LOANS_URL:
-      response = await account.createAccount(event);
-      break;
+    // case event.httpMethod === "POST" && event.path === LOANS_URL:
+    //   response = await account.createAccount(event);
+    //   break;
     case event.httpMethod === "POST" && event.path === REQUESTS_URL:
       response = await request.createRequest(JSON.parse(event.body));
       break;
     case event.httpMethod === "GET" && event.path === REQUESTS_URL:
       response = await request.getAllRequests(event);
+      break;
+    case event.httpMethod === "PUT" && event.path === REQUESTS_URL:
+      response = await request.updateRequest(event);
       break;
 
     default:

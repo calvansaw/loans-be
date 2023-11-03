@@ -1,8 +1,13 @@
 const { dynamodb } = require("../libs/dynamoClient");
-const { cognitoidentityserviceprovider } = require("../libs/cognitoClient");
+// const { cognitoidentityserviceprovider } = require("../libs/cognitoClient");
 const utils = require("../helpers/utils");
+const account = require("../services/account");
 
 const REQUESTS_TABLE = "requests";
+const CREATE_ACCOUNT = "createAccount";
+const CREATE_LOAN = "createLoan";
+const APPROVED = "APPROVED";
+const REJECTED = "REJECTED";
 
 const createRequest = async (data) => {
   const item = { ...data, requestId: `${new Date().valueOf()}` };
@@ -54,41 +59,105 @@ const deleteRequest = async (requestId) => {
     );
 };
 
-const scanDynamo = async (params, list) => {
-  try {
-    const dynamoData = await dynamodb.scan(params).promise();
-    console.log("params: ", params);
-    console.log("dynamoData: ", dynamoData);
-    list = [...list, ...dynamoData.Items];
-    if (dynamoData.LastEvaluatedKey && list.length < params.Limit) {
-      params.ExclusiveStartKey = dynamoData.LastEvaluatedKey;
-      return await scanDynamo(params, list);
-    }
-    return { ...dynamoData, list };
-  } catch (err) {
-    console.log(err);
-    return err;
-  }
-};
-
 const getAllRequests = async (event) => {
+  const accessToken = event.headers.Authorization.split("Bearer ")[1];
+
+  let userInfo;
+  try {
+    userInfo = await account.getUser(accessToken);
+    console.log("userInfo: ", userInfo);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+
+  const isAdmin = account.checkAdmin(userInfo.UserAttributes);
   const { exclusiveStartKey, limit } = event.queryStringParameters;
 
   const params = {
     TableName: REQUESTS_TABLE,
-    Limit: limit,
-    ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
+    Limit: parseInt(limit, 10),
+    ...(exclusiveStartKey && {
+      ExclusiveStartKey: { requestId: exclusiveStartKey },
+    }),
+    ...(!isAdmin && {
+      FilterExpression: "#sub = :sub",
+      ExpressionAttributeNames: {
+        "#sub": "sub",
+      },
+      ExpressionAttributeValues: {
+        ":sub": account.getUserSub(userInfo.UserAttributes),
+      },
+    }),
   };
 
   try {
-    const scanResult = await scanDynamo(params, []);
+    const scanResult = await account.scanDynamo(params, []);
     return utils.buildResponse(200, scanResult);
   } catch (err) {
     return utils.buildResponse(400, err);
   }
 };
 
-const approveRequest = () => {};
-const rejectRequest = () => {};
+const approveRequest = async (eventBody, userSub) => {
+  if (eventBody.requestType === CREATE_ACCOUNT) {
+    const item = {
+      ...eventBody.requestData,
+      sub: userSub,
+      loans: [],
+      payments: [],
+    };
+    return await account.createAccount(item);
+  }
+  const error = { error: "Invalid request type" };
+  return new Promise.reject(error);
+};
 
-module.exports = { createRequest, getAllRequests };
+const rejectRequest = async (eventBody) => {
+  if (eventBody.requestType === CREATE_LOAN) {
+    // still create loan
+  }
+};
+
+const updateRequest = async (event) => {
+  const { headers, body } = event;
+  const accessToken = headers.Authorization.split("Bearer ")[1];
+  let userInfo;
+  try {
+    userInfo = await account.getUser(accessToken);
+    console.log("userInfo: ", userInfo);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+
+  if (!account.checkAdmin(userInfo.UserAttributes)) {
+    const error = { error: "Unauthorized, user is not an admin" };
+    return utils.buildResponse(403, error);
+  }
+
+  const eventBody = JSON.parse(body);
+  const userSub = account.getUserSub(userInfo.UserAttributes);
+
+  try {
+    let response;
+    if (eventBody.requestApproval === APPROVED) {
+      response = await approveRequest(eventBody, userSub);
+    } else if (eventBody.requestApproval === REJECTED) {
+      response = await rejectRequest(eventBody, userSub);
+    } else {
+      const error = { error: "Invalid request approval type" };
+      return utils.buildResponse(400, error);
+    }
+
+    await deleteRequest(eventBody.requestId);
+    const body = {
+      Operation: "SAVE",
+      Message: "SUCCESS",
+      Item: response,
+    };
+    return utils.buildResponse(200, body);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+};
+
+module.exports = { createRequest, getAllRequests, updateRequest };

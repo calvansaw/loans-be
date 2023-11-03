@@ -1,12 +1,34 @@
 const { dynamodb } = require("../libs/dynamoClient");
 const { cognitoidentityserviceprovider } = require("../libs/cognitoClient");
-const utils = require("../helpers/utils");
+// const utils = require("../helpers/utils");
 
 const LOANS_TABLE = "loans";
+
+const scanDynamo = async (params, list) => {
+  try {
+    const dynamoData = await dynamodb.scan(params).promise();
+    console.log("params: ", params);
+    console.log("dynamoData: ", dynamoData);
+    list = [...list, ...dynamoData.Items];
+
+    if (dynamoData.LastEvaluatedKey && list.length < params.Limit) {
+      params.ExclusiveStartKey = dynamoData.LastEvaluatedKey;
+      return await scanDynamo(params, list);
+    }
+    return { ...dynamoData, list };
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+};
 
 const getUser = async (accessToken) => {
   const params = { AccessToken: accessToken };
   return await cognitoidentityserviceprovider.getUser(params).promise();
+};
+
+const getUserSub = (userAttributes) => {
+  return userAttributes.find((att) => att.Name === "sub").Value;
 };
 
 const checkAdmin = (userAttributes) => {
@@ -15,47 +37,16 @@ const checkAdmin = (userAttributes) => {
   );
 };
 
-const createAccount = async (event) => {
-  const { headers, body } = event;
-
-  const accessToken = headers.Authorization.split("Bearer ")[1];
-  let userInfo;
-  try {
-    userInfo = await getUser(accessToken);
-    console.log("userInfo: ", userInfo);
-  } catch (err) {
-    return utils.buildResponse(400, err);
-  }
-
-  if (!checkAdmin(userInfo.UserAttributes)) {
-    const error = { error: "Unauthorized, user is not an admin" };
-    return utils.buildResponse(403, error);
-  }
-
+const createAccount = async (item) => {
   const params = {
     TableName: LOANS_TABLE,
-    Item: JSON.parse(body),
+    Item: item,
     ConditionExpression: "attribute_not_exists(#sub)",
     ExpressionAttributeNames: {
       "#sub": "sub",
     },
   };
-  return await dynamodb
-    .put(params)
-    .promise()
-    .then(
-      () => {
-        const body = {
-          Operation: "SAVE",
-          Message: "SUCCESS",
-          Item: data,
-        };
-        return utils.buildResponse(200, body);
-      },
-      (err) => {
-        return utils.buildResponse(400, err);
-      }
-    );
+  return await dynamodb.put(params).promise();
 };
 
-module.exports.createAccount = createAccount;
+module.exports = { createAccount, checkAdmin, getUser, getUserSub, scanDynamo };
