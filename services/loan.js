@@ -8,8 +8,10 @@ const createLoan = async (item, userSub) => {
   const params = {
     TableName: LOANS_TABLE,
     Key: { sub: userSub },
+    ConditionExpression: "attribute_exists(#sub)",
     UpdateExpression: "SET #loans = list_append(#loans, :loans)",
     ExpressionAttributeNames: {
+      "#sub": "sub",
       "#loans": "loans",
     },
     ExpressionAttributeValues: {
@@ -85,8 +87,10 @@ const updateLoan = async (event) => {
   const params = {
     TableName: LOANS_TABLE,
     Key: { sub: userSub },
+    ConditionExpression: "attribute_exists(#sub)",
     UpdateExpression: `SET #loans[${eventBody.index}] = :loan, #payments = list_append(#payments, :payment)`,
     ExpressionAttributeNames: {
+      "#sub": "sub",
       "#loans": "loans",
       "#payments": "payments",
     },

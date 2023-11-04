@@ -9,8 +9,22 @@ const CREATE_LOAN = "createLoan";
 const APPROVED = "APPROVED";
 const REJECTED = "REJECTED";
 
-const createRequest = async (data) => {
-  const item = { ...data, requestId: `${new Date().valueOf()}` };
+const createRequest = async (event) => {
+  const { headers, body } = event;
+  const accessToken = headers.Authorization.split("Bearer ")[1];
+  let userInfo;
+  try {
+    userInfo = await account.getUser(accessToken);
+    console.log("userInfo: ", userInfo);
+  } catch (err) {
+    return utils.buildResponse(400, err);
+  }
+  const eventBody = JSON.parse(body);
+  const item = {
+    ...eventBody,
+    sub: account.getUserSub(userInfo.UserAttributes),
+    requestId: `${new Date().valueOf()}`,
+  };
   const params = {
     TableName: REQUESTS_TABLE,
     Item: item,
@@ -98,11 +112,11 @@ const getAllRequests = async (event) => {
   }
 };
 
-const approveRequest = async (eventBody, userSub) => {
+const approveRequest = async (eventBody) => {
   if (eventBody.requestType === CREATE_ACCOUNT) {
     const item = {
       ...eventBody.requestData,
-      sub: userSub,
+      sub: eventBody.sub,
       loans: [],
       payments: [],
     };
@@ -114,14 +128,14 @@ const approveRequest = async (eventBody, userSub) => {
       redeemed: false,
       loanApproval: APPROVED,
     };
-    return await loan.createLoan(item, userSub);
+    return await loan.createLoan(item, eventBody.sub);
   }
 
   const error = { error: "Invalid request type" };
   return new Promise.reject(error);
 };
 
-const rejectRequest = async (eventBody, userSub) => {
+const rejectRequest = async (eventBody) => {
   if (eventBody.requestType === CREATE_LOAN) {
     // still create a loan object for record purpose
     const item = {
@@ -130,7 +144,7 @@ const rejectRequest = async (eventBody, userSub) => {
       redeemed: false,
       loanApproval: REJECTED,
     };
-    return await loan.createLoan(item, userSub);
+    return await loan.createLoan(item, eventBody.sub);
   }
 };
 
@@ -151,14 +165,12 @@ const updateRequest = async (event) => {
   }
 
   const eventBody = JSON.parse(body);
-  const userSub = account.getUserSub(userInfo.UserAttributes);
-
   try {
     let response;
     if (eventBody.requestApproval === APPROVED) {
-      response = await approveRequest(eventBody, userSub);
+      response = await approveRequest(eventBody);
     } else if (eventBody.requestApproval === REJECTED) {
-      response = await rejectRequest(eventBody, userSub);
+      response = await rejectRequest(eventBody);
     } else {
       const error = { error: "Invalid request approval type" };
       return utils.buildResponse(400, error);
